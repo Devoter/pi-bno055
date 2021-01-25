@@ -10,11 +10,11 @@ all: ${ALLBIN}
 clean:
 	rm -f *.o ${ALLBIN}
 
-getbno055: i2c_bno055.o getbno055.o
-	$(CC) i2c_bno055.o getbno055.o -o getbno055 ${LIBS}
+libbno055.o:
+	${CC} -c libbno055.c -fPIC
 
-i2c_bno055.o:
-	${CC} -c i2c_bno055.c -fPIC
+getbno055: print.o getbno055.o libbno055.o
+	$(CC) libbno055.o print.o getbno055.o -o getbno055 ${LIBS}
 
-libbno055.so: i2c_bno055.o
-	$(CC) i2c_bno055.o getbno055.h -shared -o libbno055.so ${LIBS}
+libbno055.so: libbno055.o
+	$(CC) libbno055.o libbno055.h -shared -o libbno055.so ${LIBS}

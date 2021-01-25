@@ -21,10 +21,14 @@
 #include <getopt.h>
 #include <time.h>
 #include "getbno055.h"
+#include "libbno055.h"
+#include "print.h"
 
 /* ------------------------------------------------------------ *
  * Global variables and defaults                                *
  * ------------------------------------------------------------ */
+int i2cfd;       // I2C file descriptor
+int verbose;     // debug flag, 0 = normal, 1 = debug mode
 int verbose = 0;
 int outflag = 0;
 int argflag = 0; // 1 dump, 2 reset, 3 load calib, 4 write calib
@@ -35,6 +39,7 @@ char senaddr[256] = "0x28";
 char i2c_bus[256] = I2CBUS;
 char htmfile[256];
 char calfile[256];
+loglevel_t loglevel = level_log;
 
 /* ------------------------------------------------------------ *
  * print_usage() prints the programs commandline instructions.  *
@@ -106,7 +111,9 @@ void parseargs(int argc, char* argv[]) {
       switch (arg) {
          // arg -v verbose, type: flag, optional
          case 'v':
-            verbose = 1; break;
+            verbose = 1;
+            loglevel = level_verbose;
+            break;
 
          // arg -a + sensor address, type: string
          // mandatory, example: 0x29
@@ -240,7 +247,7 @@ void print_calstat() {
    /* -------------------------------------------------------- *
     *  Check the sensors calibration state                     *
     * -------------------------------------------------------- */
-   int res = get_calstatus(&bnoc);
+   int res = get_calstatus(loglevel, i2cfd, &bnoc);
    if(res != 0) {
       printf("Error: Cannot read calibration state.\n");
       exit(-1);
@@ -332,13 +339,13 @@ int main(int argc, char *argv[]) {
    /* ----------------------------------------------------------- *
     * "-a" open the I2C bus and connect to the sensor i2c address *
     * ----------------------------------------------------------- */
-   get_i2cbus(i2c_bus, senaddr);
+   get_i2cbus(loglevel, i2c_bus, senaddr, &i2cfd);
 
    /* ----------------------------------------------------------- *
     *  "-d" dump the register map content and exit the program    *
     * ----------------------------------------------------------- */
     if(argflag == 1) {
-      res = bno_dump();
+      res = bno_dump(loglevel, i2cfd);
       if(res != 0) {
          printf("Error: could not dump the register maps.\n");
          exit(-1);
@@ -350,7 +357,7 @@ int main(int argc, char *argv[]) {
     *  "-r" reset the sensor and exit the program                 *
     * ----------------------------------------------------------- */
     if(argflag == 2) {
-      res = bno_reset();
+      res = bno_reset(loglevel, i2cfd);
       if(res != 0) {
          printf("Error: could not reset the sensor.\n");
          exit(-1);
@@ -381,7 +388,7 @@ int main(int argc, char *argv[]) {
          exit(-1);
       }
       
-      res = set_mode(newmode);
+      res = set_mode(loglevel, i2cfd, newmode);
       if(res != 0) {
          printf("Error: could not set sensor mode %s [0x%02X].\n", opr_mode, newmode);
          exit(-1);
@@ -402,12 +409,14 @@ int main(int argc, char *argv[]) {
          exit(-1);
       }
 
-      if(newmode == get_power()) {
+      get_power(loglevel, i2cfd, &newmode);
+
+      if(newmode) {
          if(verbose == 1) printf("Debug: Sensor already in mode %s [0x%02X].\n", pwr_mode, newmode);
          exit(0);
       }
 
-      res = set_power(newmode);
+      res = set_power(loglevel, i2cfd, newmode);
       if(res != 0) {
          printf("Error: could not set power mode %s [0x%02X].\n", pwr_mode, newmode);
          exit(-1);
@@ -419,7 +428,7 @@ int main(int argc, char *argv[]) {
     *  "-l" loads the sensor calibration data from file.          *
     * To update calibration data, sensor must be in CONFIG mode.  *
     * ----------------------------------------------------------- */
-    if(argflag == 3) load_cal(calfile);
+    if(argflag == 3) load_cal(loglevel, i2cfd, calfile);
 
    /* ----------------------------------------------------------- *
     * -t "cal"  print the sensor calibration data                 *
@@ -429,7 +438,7 @@ int main(int argc, char *argv[]) {
       /* -------------------------------------------------------- *
        *  Read the sensors calibration state                      *
        * -------------------------------------------------------- */
-      res = get_calstatus(&bnoc);
+      res = get_calstatus(loglevel, i2cfd, &bnoc);
       if(res != 0) {
          printf("Error: Cannot read calibration state.\n");
          exit(-1);
@@ -437,7 +446,7 @@ int main(int argc, char *argv[]) {
       /* -------------------------------------------------------- *
        *  Read the sensors calibration offset                     *
        * -------------------------------------------------------- */
-      res = get_caloffset(&bnoc);
+      res = get_caloffset(loglevel, i2cfd, &bnoc);
       if(res != 0) {
          printf("Error: Cannot read calibration data.\n");
          exit(-1);
@@ -469,7 +478,7 @@ int main(int argc, char *argv[]) {
       /* -------------------------------------------------------- *
        *  Check the sensors calibration state                     *
        * -------------------------------------------------------- */
-      res = get_calstatus(&bnoc);
+      res = get_calstatus(loglevel, i2cfd, &bnoc);
       if(res != 0) {
          printf("Error: Cannot read calibration state.\n");
          exit(-1);
@@ -477,7 +486,7 @@ int main(int argc, char *argv[]) {
       /* -------------------------------------------------------- *
        *  Only save data if the sensor is fully calibrated (3)    *
        * -------------------------------------------------------- */
-      if(bnoc.scal_st == 3) save_cal(calfile);
+      if(bnoc.scal_st == 3) save_cal(loglevel, i2cfd, calfile);
       else printf("Error: Sensor not fully calibrated, abort writing to file %s.\n", calfile);
    }
 
@@ -487,7 +496,7 @@ int main(int argc, char *argv[]) {
     * ----------------------------------------------------------- */
    if(strcmp(datatype, "inf") == 0) {
       struct bnoinf bnoi;
-      res = get_inf(&bnoi);
+      res = get_inf(loglevel, i2cfd, &bnoi);
       if(res != 0) {
          printf("Error: Cannot read sensor version data.\n");
          exit(-1);
@@ -574,7 +583,7 @@ int main(int argc, char *argv[]) {
 
       printf("\n----------------------------------------------\n");
       struct bnoaconf bnoac;
-      if(get_acc_conf(&bnoac) == 0) print_acc_conf(&bnoac);
+      if(get_acc_conf(loglevel, i2cfd, &bnoac) == 0) print_acc_conf(&bnoac);
 
       printf("\n----------------------------------------------\n");
       print_calstat();
@@ -586,7 +595,7 @@ int main(int argc, char *argv[]) {
     * ----------------------------------------------------------- */
    if(strcmp(datatype, "acc") == 0) {
       struct bnoacc bnod;
-      res = get_acc(&bnod);
+      res = get_acc(loglevel, i2cfd, &bnod);
       if(res != 0) {
          printf("Error: Cannot read accelerometer data.\n");
          exit(-1);
@@ -623,7 +632,7 @@ int main(int argc, char *argv[]) {
     * ----------------------------------------------------------- */
    if(strcmp(datatype, "gyr") == 0) {
       struct bnogyr bnod;
-      res = get_gyr(&bnod);
+      res = get_gyr(loglevel, i2cfd, &bnod);
       if(res != 0) {
          printf("Error: Cannot read gyroscope data.\n");
          exit(-1);
@@ -660,7 +669,7 @@ int main(int argc, char *argv[]) {
     * ----------------------------------------------------------- */
    if(strcmp(datatype, "mag") == 0) {
       struct bnomag bnod;
-      res = get_mag(&bnod);
+      res = get_mag(loglevel, i2cfd, &bnod);
       if(res != 0) {
          printf("Error: Cannot read magnetometer data.\n");
          exit(-1);
@@ -698,14 +707,15 @@ int main(int argc, char *argv[]) {
     * ----------------------------------------------------------- */
    if(strcmp(datatype, "eul") == 0) {
 
-      int mode = get_mode();
-      if(mode < 8) {
+      opmode_t mode = 0;
+      res = get_mode(loglevel, i2cfd, &mode);
+      if(res || mode < 8) {
          printf("Error getting Euler data, sensor mode %d is not a fusion mode.\n", mode);
          exit(-1);
       }
 
       struct bnoeul bnod;
-      res = get_eul(&bnod);
+      res = get_eul(loglevel, i2cfd, &bnod);
       if(res != 0) {
          printf("Error: Cannot read Euler orientation data.\n");
          exit(-1);
@@ -743,8 +753,9 @@ int main(int argc, char *argv[]) {
     * ----------------------------------------------------------- */
    if(strcmp(datatype, "continuous") == 0) {
 
-      int mode = get_mode();
-      if(mode < 8) {
+      opmode_t mode = 0;
+      res = get_mode(loglevel, i2cfd, &mode);
+      if(res || mode < 8) {
          printf("Error getting Euler data, sensor mode %d is not a fusion mode.\n", mode);
          exit(-1);
       }
@@ -755,7 +766,7 @@ int main(int argc, char *argv[]) {
        * EUL 66.06 -3.00 -15.56 (EUL H R P in Degrees)               *
        * ----------------------------------------------------------- */
       while(1){
-        res = get_eul(&bnod);
+        res = get_eul(loglevel, i2cfd, &bnod);
         if(res != 0) {
            printf("Error: Cannot read Euler orientation data.\n");
            continue;
@@ -790,14 +801,15 @@ int main(int argc, char *argv[]) {
     * ----------------------------------------------------------- */
    if(strcmp(datatype, "qua") == 0) {
 
-      int mode = get_mode();
-      if(mode < 8) {
+      opmode_t mode = 0;
+      res = get_mode(loglevel, i2cfd, &mode);
+      if(res || mode < 8) {
          printf("Error getting Quaternation, sensor mode %d is not a fusion mode.\n", mode);
          exit(-1);
       }
 
       struct bnoqua bnod;
-      res = get_qua(&bnod);
+      res = get_qua(loglevel, i2cfd, &bnod);
       if(res != 0) {
          printf("Error: Cannot read Quaternation data.\n");
          exit(-1);
@@ -837,14 +849,15 @@ int main(int argc, char *argv[]) {
     * ----------------------------------------------------------- */
    if(strcmp(datatype, "gra") == 0) {
 
-      int mode = get_mode();
-      if(mode < 8) {
+      opmode_t mode = 0;
+      res = get_mode(loglevel, i2cfd, &mode);
+      if(res || mode < 8) {
          printf("Error getting Gravity Vector, sensor mode %d is not a fusion mode.\n", mode);
          exit(-1);
       }
 
       struct bnogra bnod;
-      res = get_gra(&bnod);
+      res = get_gra(loglevel, i2cfd, &bnod);
       if(res != 0) {
          printf("Error: Cannot read gravity vector data.\n");
          exit(-1);
@@ -882,14 +895,15 @@ int main(int argc, char *argv[]) {
     * ----------------------------------------------------------- */
    if(strcmp(datatype, "lin") == 0) {
 
-      int mode = get_mode();
-      if(mode < 8) {
+      opmode_t mode = 0;
+      res = get_mode(loglevel, i2cfd, &mode);
+      if(res || mode < 8) {
          printf("Error getting Linear Acceleration, sensor mode %d is not a fusion mode.\n", mode);
          exit(-1);
       }
 
       struct bnolin bnod;
-      res = get_lin(&bnod);
+      res = get_lin(loglevel, i2cfd, &bnod);
       if(res != 0) {
          printf("Error: Cannot read linear acceleration data.\n");
          exit(-1);
