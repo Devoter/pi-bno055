@@ -308,6 +308,7 @@ typedef enum {
  * external function prototypes for I2C bus communication code  *
  * ------------------------------------------------------------ */
 extern int get_i2cbus(loglevel_t, char*, char*, int*);      // get the I2C bus file handle
+extern void close_i2cbus(int);                              // close the I2C bus file descriptor
 extern int set_page0(loglevel_t, int);                      // set register map page 0
 extern int set_page1(loglevel_t,int);                       // set register map page 1
 extern int get_mode(loglevel_t, int, opmode_t*);            // get the sensor ops mode

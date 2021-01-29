@@ -53,6 +53,13 @@ int get_i2cbus(loglevel_t loglevel, char *i2cbus, char *i2caddr, int* i2cfd) {
 }
 
 /* ------------------------------------------------------------ *
+ * close_i2cbu() - Close the I2C bus file descriptor            *
+ * ------------------------------------------------------------ */
+void close_i2cbus(int i2cfd) {
+   close(i2cfd);
+}
+
+/* ------------------------------------------------------------ *
  * set_page0() - Set page ID = 0 to set default register access *
  * ------------------------------------------------------------ */
 int set_page0(loglevel_t loglevel, int i2cfd) {
